@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda Event Destinations
+
+Resources:
+    FailureLambda:
+      Type: AWS::Serverless::Function
+      Properties:
+        InlineCode: |
+          exports.handler = async (event) => {
+            console.log(`events - ${JSON.stringify(event)} `)
+          };
+        Handler: index.handler
+        Runtime: nodejs12.x
+        MemorySize: 256
+        FunctionName: 'demo-failure'
+
+    DestinationLambda:
+        Type: AWS::Serverless::Function
+        Properties:
+          InlineCode: |
+            exports.handler = async (event) => {
+              throw new Error("Async fail");
+            };
+          Handler: index.handler
+          DeadLetterQueue: 
+            Type: SQS
+            TargetArn: !GetAtt FailureQueue.Arn
+          Runtime: nodejs12.x
+          MemorySize: 256
+          FunctionName: 'demo-lambda-destination'
+          Role: <replace this>
+          EventInvokeConfig:
+            MaximumEventAgeInSeconds: 70
+            MaximumRetryAttempts: 2
+            DestinationConfig:
+              OnSuccess:
+                Type: SQS
+                Destination: !GetAtt SuccessQueue.Arn       
+              OnFailure:
+                Type: Lambda
+                Destination: !GetAtt FailureLambda.Arn
+
+    SuccessQueue:
+        Type: AWS::SQS::Queue
+        Properties:
+            QueueName: "success-queue"
+    
+    FailureQueue:
+        Type: AWS::SQS::Queue
+        Properties:
+            QueueName: "failure-queue"

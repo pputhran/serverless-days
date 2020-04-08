@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+
+Resources:    
+  DemoFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+        FunctionName: 'demo-expressworkflow-lambda'
+        Handler: index.handler
+        Runtime: nodejs12.x
+        CodeUri: ./demo
+
+  MyStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: DemoExpressFlow
+      StateMachineType: EXPRESS
+      LoggingConfiguration: 
+        Destinations: 
+            - CloudWatchLogsLogGroup: 
+                LogGroupArn: !GetAtt MyLogGroup.Arn
+        Level: ALL
+      DefinitionString: !Sub |-
+        {
+            "StartAt": "Lambda",
+            "States": {
+            "Lambda": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                "FunctionName": "<FUNCTION ARN>",
+                "Payload": {
+                    "Input.$": "$"
+                }
+                },
+                "End": true
+            }
+            }
+        }
+      RoleArn: !GetAtt StateRole.Arn
+
+  StateRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Principal: 
+              Service: 
+                - "states.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: "demo-expressworkflow-policy"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: "Allow"
+                Action: "lambda:InvokeFunction"
+                Resource: !GetAtt DemoFunction.Arn
+              - Effect: "Allow"
+                Action: 
+                  - "logs:CreateLogDelivery"
+                  - "logs:GetLogDelivery"
+                  - "logs:UpdateLogDelivery"
+                  - "logs:DeleteLogDelivery"
+                  - "logs:ListLogDeliveries"
+                  - "logs:PutResourcePolicy"
+                  - "logs:DescribeResourcePolicies"
+                  - "logs:DescribeLogGroups"
+                Resource: "*"
+
+  MyLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      RetentionInDays: 1
+
+Outputs:
+  LambdaFunction:
+    Description: "Lambda Function"
+    Value: !GetAtt DemoFunction.Arn

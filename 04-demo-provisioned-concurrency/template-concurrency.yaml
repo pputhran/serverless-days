@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+
+Resources:
+  MyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: dev
+      TracingEnabled: true
+    
+  ConcurrencyFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: index.handler
+      FunctionName: 'demo-concurrency'
+      Runtime: nodejs12.x
+      MemorySize: 512
+      CodeUri: ./app
+      AutoPublishAlias: live
+      Tracing: Active
+      DeploymentPreference:
+        Type: Canary10Percent5Minutes
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 10
+      Events:
+        HelloAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /concurrency
+            Method: GET
+  
+Outputs:
+  Region:
+    Description: "Region"
+    Value: !Ref AWS::Region
+
+  ApiId:
+    Description: "API ID"
+    Value: !Ref MyApi
+
+  ApiUrl:
+    Description: "API endpoint URL for Prod environment"
+    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/dev/'

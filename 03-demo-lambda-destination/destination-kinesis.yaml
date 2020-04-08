@@ -1,0 +1,35 @@
+## destination-kinesis-demo
+
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: 'AWS::Serverless-2016-10-31'
+
+Resources:
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      ShardCount: 1
+
+  Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.7
+      Role: <replace this>  # Ensure this role has the right permission to write to SQS queue
+      InlineCode: |
+        def handler(event, _):
+            raise Exception()
+      Handler: index.handler
+      Events:
+        Kinesis:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt KinesisStream.Arn
+            StartingPosition: TRIM_HORIZON
+            MaximumRetryAttempts: 1
+            MaximumRecordAgeInSeconds: 60
+            DestinationConfig:
+              OnFailure:
+                Type: SQS
+                Destination: !GetAtt DeadLetterQueue.Arn

@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SQS FIFO Lambda demo
+
+Resources:
+    FifoSqsQueue:
+        Type: "AWS::SQS::Queue"
+        Properties:
+          ContentBasedDeduplication: true
+          QueueName: demo.fifo
+          FifoQueue: true
+    
+    FifoAPI:
+        Type: AWS::Serverless::Api
+        Properties:
+          StageName: dev
+          TracingEnabled: true
+    
+    SendSQSFifoLambda:
+        Type: AWS::Serverless::Function
+        Properties:
+            InlineCode: |
+                const sqs = require('aws-sdk/clients/sqs');
+                const sqsFifo = new sqs();
+                const QUEUE_NAME = process.env.QUEUE_NAME;
+
+                exports.handler = async (event) => {
+                    const groupId = Math.floor(Math.random() * (10 - 7 + 1)) + 7;
+                    const messageId = Math.floor(Math.random() * (50 - 1 + 1)) + 1;
+
+                    console.log(`groupId - messageId : ${groupId}-${messageId}`);
+
+                    await sqsFifo.sendMessage({
+                        MessageGroupId: `group-${groupId}`,
+                        MessageDeduplicationId: `m-${groupId}-${messageId}`,
+                        MessageBody: `${messageId}`,
+                        QueueUrl: QUEUE_NAME
+                    }).promise()
+
+                    return {
+                        statusCode: 200,
+                        body: JSON.stringify("done")
+                    }
+                };
+            Handler: index.handler
+            Runtime: nodejs12.x
+            MemorySize: 256
+            FunctionName: 'demo-send-FIFO'
+            Role: 'arn:aws:iam::<account_id>:role/lambda-general'
+            Environment:
+                Variables:
+                    QUEUE_NAME: !Ref FifoSqsQueue 
+            Events:
+                FifoAPI:
+                    Type: Api
+                    Properties:
+                        RestApiId: !Ref FifoAPI
+                        Path: /fifo
+                        Method: GET
+
+    ProcessSQSFifoLambda:
+        Type: AWS::Serverless::Function
+        Properties:
+            InlineCode: |
+                const sqs = require('aws-sdk/clients/sqs');
+                const sqsFifo = new sqs();
+                const QUEUE_NAME = process.env.QUEUE_NAME;
+
+                exports.handler = async (event) => {
+                    console.log(`event: ${JSON.stringify(event)}`);
+
+                    return await sqsFifo.receiveMessage({
+                        QueueUrl: QUEUE_NAME
+                        }).promise()
+                };
+            Handler: index.handler
+            Runtime: nodejs12.x
+            MemorySize: 256
+            FunctionName: 'demo-receive-FIFO'
+            Role: 'arn:aws:iam::<account_id>:role/lambda-general'
+            Environment:
+                Variables:
+                    QUEUE_NAME: !Ref FifoSqsQueue
+            Events: 
+                SQSEvent:
+                    Type: SQS
+                    Properties:
+                        Queue: !GetAtt FifoSqsQueue.Arn
+                        BatchSize: 1
+
+Outputs:    
+    ApiUrl:
+        Description: "API endpoint URL"
+        Value: !Sub 'https://${FifoAPI}.execute-api.${AWS::Region}.amazonaws.com/dev/'

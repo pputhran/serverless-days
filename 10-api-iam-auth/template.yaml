@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: API Gateway with AWS IAM Authorizer
+
+Globals:
+  Api:
+    MethodSettings: [{
+        # LOGGING!!
+        "LoggingLevel": "INFO",
+
+        # Trace-level Logging
+        "DataTraceEnabled": True,
+
+        # # On all Paths & methods
+        "ResourcePath": "/*",
+        "HttpMethod": "*",
+    }]
+
+Resources:
+  MyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: demo-iam-auth
+      StageName: Prod
+      Auth:
+        DefaultAuthorizer: AWS_IAM
+        InvokeRole: CALLER_CREDENTIALS # default, can specify other role or NONE
+
+  MyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      InlineCode: |
+        exports.handler = async (event) => {
+            console.log(`events - ${JSON.stringify(event)} `)
+            return {
+            statusCode: 200,
+            body: JSON.stringify(event),
+            headers: {}
+            }
+        }
+      Handler: index.handler
+      Runtime: nodejs12.x
+      FunctionName: demo-iam-auth-function
+      Events:
+        GetRoot:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /
+            Method: get
+
+Outputs:
+  ApiURL:
+    Description: "API URL"
+    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/'
+
+
+# curl 'https://ie5z54qh36.execute-api.us-east-2.amazonaws.com/Prod/users' \
+# --header 'Authorization: allow' \
+# --header 'x-api-key: ikln1Fk1Zh6yidICToCha1wMGZdmMqiY42Dux4Qv'

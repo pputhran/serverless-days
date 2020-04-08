@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda Event Destinations
+
+Resources:
+    DestinationLambda:
+        Type: AWS::Serverless::Function
+        Properties:
+          InlineCode: |
+            exports.handler = async (event) => {
+                if (event.Success) {
+                    return {
+                        statusCode: 200,
+                        body: JSON.stringify('Hello from Lambda Destination!'),
+                    }
+                } else {
+                    throw new Error("Failure from event, Success = false, I am failing!");
+                }
+            };
+          Handler: index.handler
+          Runtime: nodejs12.x
+          MemorySize: 256
+          FunctionName: 'demo-lambda-destination'
+          Role: <replace this>
+          EventInvokeConfig:
+            MaximumEventAgeInSeconds: 70
+            MaximumRetryAttempts: 1
+            DestinationConfig:
+              OnSuccess:
+                Type: SQS
+                Destination: !GetAtt SuccessQueue.Arn       
+              OnFailure:
+                Type: SQS
+                Destination: !GetAtt FailureQueue.Arn
+
+    SuccessQueue:
+        Type: AWS::SQS::Queue
+        Properties:
+            QueueName: "success-queue"
+    
+    FailureQueue:
+        Type: AWS::SQS::Queue
+        Properties:
+            QueueName: "failure-queue"
