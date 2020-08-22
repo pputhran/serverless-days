@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Deploys private API Gateway with Lambda attached to VPC.
+
+Globals:
+  Function:
+    Timeout: 5
+  Api:
+    EndpointConfiguration: PRIVATE
+
+Parameters: 
+  SecurityGroupId: 
+    Type: String
+    Description: Security Group IDs that Lambda will use
+  SubnetId1: 
+    Type: String
+    Description: Private Subnet ID 1 for Lambda Function
+  SubnetId2: 
+    Type: String
+    Description: Private Subnets ID 2 for Lambda Function
+  VPCEndpointID: 
+    Type: String
+    Description: VPC Endpoint ID for API Gateway
+
+Resources:
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+        InlineCode: |
+          exports.handler = async (event) => {
+            return {
+                statusCode: 200,
+                body: JSON.stringify('Hello from VPC!'),
+            }
+          };
+        Handler: index.handler
+        Runtime: nodejs12.x
+        MemorySize: 256
+        FunctionName: 'lambda-vpc-demo'
+        Events:
+          PrivateApi:
+            Type: Api
+            Properties:
+              Method: GET
+              Path: /private
+              RestApiId: !Ref PrivateAPI
+          PublicApi:
+            Type: Api
+            Properties:
+              Method: GET
+              Path: /public
+              RestApiId: !Ref PublicAPI
+        Policies:
+          - VPCAccessPolicy: {}
+        VpcConfig:
+          SecurityGroupIds:
+            - !Ref SecurityGroupId
+          SubnetIds:
+            - !Ref SubnetId1
+            - !Ref SubnetId2
+
+  PrivateAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: private-api
+      StageName: Prod
+      EndpointConfiguration: PRIVATE
+      Auth:
+        ResourcePolicy:
+          SourceVpcWhitelist:
+            - !Ref VPCEndpointID
+
+  PublicAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: public-api
+      StageName: Prod
+      EndpointConfiguration: REGIONAL
+
+Outputs:
+    HelloWorldFunction:
+      Description: "Hello World Lambda Function ARN"
+      Value: !GetAtt HelloWorldFunction.Arn
+
+    PublicAPI:
+      Description: "API Gateway endpoint URL for Public"
+      Value: !Sub "https://${PublicAPI}.execute-api.${AWS::Region}.amazonaws.com/Prod/public/"
+
+    PrivateAPI:
+      Description: "API Gateway endpoint URL for Private"
+      Value: !Sub "https://${PrivateAPI}.execute-api.${AWS::Region}.amazonaws.com/Prod/private/"
