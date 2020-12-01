@@ -26,5 +26,5 @@ Provide the below in the Input Transformer as `Input Path`
 Provide the below as `Input Template`
 
 ```
-"{\"orderId\": <orderId>, \"price\": <price>, \"productId\": <productId>}"
+"{\"orderId\": \<orderId\>, \"price\": \<price\>, \"productId\": \<productId\>}"
 ```
