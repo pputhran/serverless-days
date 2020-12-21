@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Sample SAM templates for API Gateway Websockets integration to SQS
+Resources:
+  MyQueue:
+    Type: AWS::SQS::Queue
+  APIGSQSWebSocket:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: api-ws-sqs
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+  Deployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+    - SQSRoute
+    Properties:
+      ApiId: !Ref APIGSQSWebSocket
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: Prod
+      Description: Prod Stage
+      DeploymentId: !Ref Deployment
+      ApiId: !Ref APIGSQSWebSocket
+
+  APIGatewayRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action: sqs:SendMessage
+                Effect: Allow
+                Resource: !GetAtt 'MyQueue.Arn'
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: '*'
+            Version: '2012-10-17'
+          PolicyName: apig-sqs-send-msg-policy
+      RoleName: apig-sqs-send-msg-role
+    Type: AWS::IAM::Role
+
+  SQSRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGSQSWebSocket
+      RouteKey: sqs
+      AuthorizationType: NONE
+      OperationName: SQSRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref SQSInteg
+  SQSInteg:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref APIGSQSWebSocket
+      Description: SQS Integration
+      IntegrationType: AWS
+      CredentialsArn: !GetAtt 'APIGatewayRole.Arn'
+      PassthroughBehavior: NEVER
+      IntegrationMethod: POST
+      RequestParameters:
+        integration.request.header.Content-Type: '''application/x-www-form-urlencoded'''
+      RequestTemplates:
+        application/json: Action=SendMessage&MessageBody=$input.body
+      IntegrationUri: !Join
+          - ''
+          - - 'arn:aws:apigateway:'
+            - !Ref 'AWS::Region'
+            - :sqs:path/
+            - !Ref 'AWS::AccountId'
+            - /
+            - !GetAtt MyQueue.QueueName
+Outputs:
+
+  WebSocketURI:
+    Description: "The WSS Protocol URI to connect to"
+    Value: !Join [ '', [ 'wss://', !Ref APIGSQSWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/',!Ref 'Stage'] ]
