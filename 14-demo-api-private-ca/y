@@ -1,0 +1,11 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "acm-pca"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-58ilifwpxy1e"
+s3_prefix = "acm-pca"
+region = "us-east-2"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "HostedZoneId=\"Z3E0HC3AJ11DWT\" DomainName=\"*.puthran.uk\" TruststoreKey=\"truststore.pem\""

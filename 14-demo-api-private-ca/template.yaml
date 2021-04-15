@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: HTTP API
+
+Parameters:
+  HostedZoneId:
+    Type: String
+    Description: Hosted zone where record set needs to be created
+  DomainName:
+    Type: String
+    Description: Custom domain name
+  TruststoreKey:
+    Type: String
+    Description: Key for trust store file
+    Default: truststore.pem
+
+Globals:
+  Function:
+    Timeout: 5
+
+Resources:
+  PrivateCA:
+    Type: AWS::ACMPCA::CertificateAuthority
+    Properties:
+      KeyAlgorithm: RSA_2048
+      SigningAlgorithm: SHA256WITHRSA
+      Subject:
+        CommonName: !Sub "${AWS::StackName}-rootca"
+      Type: ROOT
+
+  PrivateCACertificate:
+    Type: AWS::ACMPCA::Certificate
+    Properties:
+      CertificateAuthorityArn: !Ref PrivateCA
+      CertificateSigningRequest: !GetAtt PrivateCA.CertificateSigningRequest
+      SigningAlgorithm: SHA256WITHRSA
+      TemplateArn: 'arn:aws:acm-pca:::template/RootCACertificate/V1'
+      Validity:
+        Type: YEARS
+        Value: 10
+
+  PrivateCAActivation:
+    Type: AWS::ACMPCA::CertificateAuthorityActivation
+    Properties:
+      Certificate: !GetAtt PrivateCACertificate.Certificate
+      CertificateAuthorityArn: !Ref PrivateCA
+      Status: ACTIVE
+
+  MtlsCA:
+    Type: AWS::ACMPCA::CertificateAuthority
+    Properties:
+      Type: SUBORDINATE
+      KeyAlgorithm: RSA_2048
+      SigningAlgorithm: SHA256WITHRSA
+      Subject:
+        CommonName: !Sub "${AWS::StackName}-mtlsca"
+
+  MtlsCertificate:
+    DependsOn: PrivateCAActivation
+    Type: AWS::ACMPCA::Certificate
+    Properties:
+      CertificateAuthorityArn: !Ref PrivateCA
+      CertificateSigningRequest: !GetAtt MtlsCA.CertificateSigningRequest
+      SigningAlgorithm: SHA256WITHRSA
+      TemplateArn: 'arn:aws:acm-pca:::template/SubordinateCACertificate_PathLen3/V1'
+      Validity:
+        Type: YEARS
+        Value: 3
+
+  MtlsActivation:
+    Type: AWS::ACMPCA::CertificateAuthorityActivation
+    Properties:
+      CertificateAuthorityArn: !Ref MtlsCA
+      Certificate: !GetAtt MtlsCertificate.Certificate
+      CertificateChain: !GetAtt PrivateCAActivation.CompleteCertificateChain
+      Status: ACTIVE
+
+  ClientOneCert:
+    DependsOn: MtlsActivation
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      CertificateAuthorityArn: !Ref MtlsCA
+      CertificateTransparencyLoggingPreference: ENABLED
+      DomainName: !Ref DomainName
+      Tags:
+        - Key: Name
+          Value: ClientOneCert
+
+  CustomDomainCert:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      CertificateTransparencyLoggingPreference: ENABLED
+      DomainName: !Ref DomainName
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+      ValidationMethod: DNS
+
+  SampleHttpApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      EndpointConfiguration: REGIONAL
+      Domain:
+        CertificateArn: !Ref CustomDomainCert
+        DomainName: !Ref DomainName
+        SecurityPolicy: TLS_1_2
+        Route53:
+          EvaluateTargetHealth: False
+          HostedZoneId: !Ref HostedZoneId
+
+
+  # Open route
+  LambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      InlineCode: |
+        exports.handler = async (event) => {
+          console.log(`events - ${JSON.stringify(event)} `)
+
+          const response = {
+            statusCode: 200,
+            body: JSON.stringify('Hello from Lambda!'),
+          };
+          return response;
+        };
+      Handler: index.handler
+      Runtime: nodejs12.x
+      MemorySize: 256
+      FunctionName: 'demo-ca'
+      Events:
+        RootGet:
+          Type: Api
+          Properties:
+            Path: /
+            Method: get
+            RestApiId: !Ref SampleHttpApi
+
+Outputs:
+  ClientOneCertArn:
+    Description: "Arn for client certificate"
+    Value: !Ref ClientOneCert
