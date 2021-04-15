@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Kinesis Fan Out to DDB and S3
+
+Resources:
+  KinesisStream:
+    Type: "AWS::Kinesis::Stream"
+    Properties:
+      ShardCount: 1
+  
+  DDBConsumer:
+    Type: "AWS::Kinesis::StreamConsumer"
+    Properties:
+      StreamARN: !GetAtt KinesisStream.Arn
+      ConsumerName: DDBConsumer
+
+  DDBFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs12.x
+      MemorySize: 256
+      InlineCode: |
+          exports.handler = async (event) => {
+              console.log(`events - ${JSON.stringify(event)}`)
+              return "Hello v2"
+          };
+      Events:
+        Stream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt DDBConsumer.ConsumerARN
+            StartingPosition: LATEST
+            BatchSize: 100
